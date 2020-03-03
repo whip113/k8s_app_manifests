@@ -1,0 +1,84 @@
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: cli-app
+  name: cli-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cli-app
+  template:
+    metadata:
+      labels:
+        app: cli-app
+    spec:
+      serviceAccountName: cli-app-sa #< APP_SERVICE_ACCOUNT_NAME >
+      containers:
+      - image: conjurin/cli:5 #< TEST_APP_DOCKER_IMAGE >
+        imagePullPolicy: Always
+        name: test-app
+        command: "sleep"
+        args: "infinity"
+        env:
+          - name: CONJUR_VERSION
+            value: '5' #'< CONJUR_VERSION >'
+          - name: CONJUR_APPLIANCE_URL
+            value: "https://conjur-follower.svc.local" #"< CONJUR_APPLIANCE_URL >"
+          - name: CONJUR_ACCOUNT
+            value: lab #< CONJUR_ACCOUNT >
+          - name: CONJUR_AUTHN_TOKEN_FILE
+            value: /run/conjur/access-token
+          - name: CONJUR_SSL_CERTIFICATE
+            valueFrom:
+              configMapKeyRef:
+                name: ssl-certificate #< CONFIG_MAP_NAME >
+                key: ssl-certificate
+        volumeMounts:
+          - mountPath: /run/conjur
+            name: conjur-access-token
+            readOnly: true
+      - image: cyberark/conjur-kubernetes-authenticator
+        imagePullPolicy: Always
+        name: authenticator #<AUTHENTICATOR_CLIENT_CONTAINER_NAME>
+        env:
+          - name: CONTAINER_MODE
+            value: init
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: CONJUR_VERSION
+            value: '5' #'< CONJUR_VERSION >'
+          - name: CONJUR_AUTHN_URL
+            value: "https://conjur-follower.svc.local/authn-k8s/" #"< CONJUR_AUTHN_URL >"
+          - name: CONJUR_ACCOUNT
+            value: lab #< CONJUR_ACCOUNT >
+          - name: CONJUR_AUTHN_LOGIN
+            value: "host/my_app/apps/<k8s_namespace>/service_account/<k8s_service_acct>" 
+# Authn ID for the "host" defined in DAP with the format 
+# "host/<policy_branch>/apps/<k8s_ns/service_account/k8s_sa"
+          - name: CONJUR_SSL_CERTIFICATE
+            valueFrom:
+              configMapKeyRef:
+                name: ssl-certificate #< CONFIG_MAP_NAME >
+                key: ssl-certificate
+        volumeMounts:
+          - mountPath: /run/conjur
+            name: conjur-access-token
+      imagePullSecrets:
+        - name: dockerpullsecret
+      volumes:
+        - name: conjur-access-token
+          emptyDir:
+            medium: Memory:
